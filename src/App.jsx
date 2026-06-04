@@ -1,11 +1,68 @@
 import { useState } from "react"
-import { PDFDocument,degrees } from "pdf-lib"
+import { PDFDocument, degrees } from "pdf-lib"
 import "./App.css"
 
 export default function App() {
   const [loading, setLoading] = useState(false)
+  const [file,setFile] = useState(null)
 
-  const processPdf = async (file) => {
+  const cropLabelsOnly = async (file) => {
+    try {
+      setLoading(true)
+
+      const bytes = await file.arrayBuffer()
+
+      const inputPdf = await PDFDocument.load(bytes)
+
+      const outputPdf = await PDFDocument.create()
+
+      const pageCount = inputPdf.getPageCount()
+
+      for (let i = 0; i < pageCount; i++) {
+        const [topPage] = await outputPdf.copyPages(inputPdf, [i])
+        const [bottomPage] = await outputPdf.copyPages(inputPdf, [i])
+
+        const { width, height } = topPage.getSize()
+
+        // Portion 1 (Top Area)
+        const LEFT = 185
+        const RIGHT = 185
+        const TOP = 20
+        const BOTTOM = 458
+
+        topPage.setCropBox(
+          LEFT,
+          BOTTOM,
+          width - LEFT - RIGHT,
+          height - TOP - BOTTOM
+        )
+
+        outputPdf.addPage(topPage)
+      }
+
+      const pdfBytes = await outputPdf.save()
+
+      const blob = new Blob([pdfBytes], {
+        type: "application/pdf",
+      })
+
+      const url = URL.createObjectURL(blob)
+
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `split-${file.name}`
+      a.click()
+
+      URL.revokeObjectURL(url)
+      setFile(null)
+    } catch (error) {
+      console.error(error)
+      alert("Failed to process PDF")
+    } finally {
+      setLoading(false)
+    }
+  }
+  const cropLabelAndInvoice = async (file) => {
     try {
       setLoading(true)
 
@@ -74,37 +131,65 @@ export default function App() {
       alert("Failed to process PDF")
     } finally {
       setLoading(false)
+      setFile(null)
     }
   }
 
   const handleFileChange = (e) => {
-    const file = e.target.files?.[0]
+    const file = [...e.target.files][0]
 
     if (!file) return
-
-    processPdf(file)
-    e.target.value = null
+    setFile(()=>{
+      e.target.value = null
+      return file
+    })
   }
 
   return (
-    <>
-      <div className="container">
-        <h1 style={{ textDecoration: "underline" }}>Flipkart PDF Splitter</h1>
-        <div className="section">
-          <h3>For Quanitity Orders</h3>
-          <label className="upload-btn">
-            {loading ? "Processing..." : "Upload PDF"}
+    <div className="h-screen w-screen bg-slate-100 flex flex-col items-center pt-20 gap-8">
 
-            <input
-              hidden
-              type="file"
-              accept=".pdf"
-              onChange={handleFileChange}
-            />
-          </label>
-        </div>
+      <h1 className="text-3xl font-bold text-slate-800 tracking-tight decoration-slate-400 select-none">
+        Flipkart Label Splitter
+      </h1>
+
+      <div className="w-80 flex flex-col items-center justify-center text-center gap-3 rounded-xl bg-white p-5 shadow-md border border-slate-200">
+
+        {/* Upload Box */}
+        <label
+          className={`w-full h-28 flex flex-col items-center justify-center cursor-pointer rounded-lg border transition-all duration-200
+        ${file ? "border-emerald-400 bg-emerald-50" : "border-slate-300 bg-slate-50 hover:border-slate-400"}
+        text-slate-500 font-medium`}
+        >
+          <span className="text-sm">
+            {loading ? "Processing PDF..." : "Click to upload PDF"}
+          </span>
+
+          <input
+            hidden
+            type="file"
+            accept=".pdf"
+            onChange={handleFileChange}
+          />
+        </label>
+
+        {/* Primary Button */}
+        <button
+          className="w-full px-4 py-2 rounded-lg bg-indigo-600 text-white font-medium hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
+          onClick={() => cropLabelsOnly(file)}
+          disabled={!file || loading}
+        >
+          Extract Labels
+        </button>
+
+        {/* Secondary Button */}
+        <button
+          className="w-full px-4 py-2 rounded-lg bg-slate-200 text-slate-800 font-medium hover:bg-slate-300 disabled:opacity-50 disabled:cursor-not-allowed transition"
+          onClick={() => cropLabelAndInvoice(file)}
+          disabled={!file || loading}
+        >
+          Label + Invoice
+        </button>
       </div>
-
-    </>
-  )
+    </div>
+  );
 }
